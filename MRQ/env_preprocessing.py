@@ -193,19 +193,23 @@ class AtariPreprocessing:
         utils.set_instance_vars(self.hp, self)
 
         # Only needed for Gymnasium >= 1.0.0
-        import ale_py
-        gym.register_envs(ale_py)
+        import envpool
 
         import cv2
         self.resize = partial(cv2.resize, interpolation=cv2.INTER_AREA)
 
-        self.env = gym.make(
-            env_name.replace('Atari-','ALE/'),
-            frameskip=1,
-            obs_type='grayscale' if self.grayscale else 'rgb',
-            repeat_action_probability=0.25 if self.sticky_actions else 0
+        self.env = envpool.make(
+            env_name.replace('Atari-',""),
+            env_type="gym",
+            seed=seed,
+            episodic_life=True,
+            reward_clip=True,
+            repeat_action_probability=0.0,
+            frame_skip=1,
+            noop_max=30,
+            stack_num=1,
         )
-        self.env.reset(seed=seed)
+        self.env.reset()
         self.offline = False
 
         self.pixel_obs = True
@@ -238,9 +242,9 @@ class AtariPreprocessing:
                 obs, _, terminal, truncated, info = self.env.step(0)
                 if terminal or truncated: obs, info = self.env.reset()
 
-        self.lives = self.env.unwrapped.ale.lives()
+        self.lives = info["lives"][0]
         for _ in range(2):
-            self.pool_queue.append(obs)
+            self.pool_queue.append(obs[0,0])
 
         obs = self.get_obs()
         for _ in range(self.history):
@@ -257,11 +261,11 @@ class AtariPreprocessing:
         reward = 0.0
         for _ in range(self.action_repeat):
             self.frames += 1
-            obs, frame_reward, terminal, truncated, info = self.env.step(action)
+            obs, frame_reward, terminal, truncated, info = self.env.step(np.array([action], dtype=int))
             reward += frame_reward
-            self.pool_queue.append(obs)
+            self.pool_queue.append(obs[0,0])
 
-            if self.terminal_lives and self.env.unwrapped.ale.lives() < self.lives:
+            if self.terminal_lives and info["lives"][0] < self.lives:
                 terminal = True
 
             if terminal or truncated:
